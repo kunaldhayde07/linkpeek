@@ -1,0 +1,227 @@
+// ============================================================================
+// LinkPeek Prisma Schema
+// ============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "fullTextIndex"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum Plan {
+  free
+  pro
+  enterprise
+}
+
+enum Engine {
+  fetch
+  playwright
+}
+
+enum ScreenshotFormat {
+  png
+  jpeg
+  webp
+}
+
+// ============================================================================
+// MODELS
+// ============================================================================
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique @db.VarChar(255)
+  name          String?  @db.VarChar(255)
+  avatarUrl     String?  @map("avatar_url") @db.VarChar(1024)
+  plan          Plan     @default(free)
+  isActive      Boolean  @default(true) @map("is_active")
+  emailVerified Boolean  @default(false) @map("email_verified")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  apiKeys     ApiKey[]
+  previews    Preview[]
+  collections Collection[]
+  tags        Tag[]
+  screenshots Screenshot[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model ApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  name       String?   @db.VarChar(100)
+  keyHash    String    @unique @map("key_hash") @db.VarChar(64)
+  keyPrefix  String    @map("key_prefix") @db.VarChar(20)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiUsage ApiUsage[]
+
+  @@index([userId])
+  @@map("api_keys")
+}
+
+model Preview {
+  id          String  @id @default(uuid()) @db.Uuid
+  userId      String  @map("user_id") @db.Uuid
+  url         String  @db.VarChar(2048)
+  urlHash     String  @map("url_hash") @db.VarChar(64)
+  resolvedUrl String? @map("resolved_url") @db.VarChar(2048)
+  domain      String  @db.VarChar(255)
+
+  title       String? @db.VarChar(1024)
+  description String? @db.Text
+  image       String? @db.VarChar(2048)
+  favicon     String? @db.VarChar(2048)
+  siteName    String? @map("site_name") @db.VarChar(255)
+  type        String? @db.VarChar(50)
+  locale      String? @db.VarChar(20)
+
+  twitterCard        String? @map("twitter_card") @db.VarChar(50)
+  twitterTitle       String? @map("twitter_title") @db.VarChar(1024)
+  twitterDescription String? @map("twitter_description") @db.Text
+  twitterImage       String? @map("twitter_image") @db.VarChar(2048)
+
+  contentType  String?  @map("content_type") @db.VarChar(100)
+  charset      String?  @db.VarChar(50)
+  author       String?  @db.VarChar(255)
+  keywords     String[] @default([])
+  themeColor   String?  @map("theme_color") @db.VarChar(20)
+
+  engine       Engine   @default(fetch)
+  responseTime Int?     @map("response_time")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tags                PreviewTag[]
+  collectionPreviews  CollectionPreview[]
+  screenshots         Screenshot[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([urlHash])
+  @@index([userId, urlHash])
+  @@index([domain])
+  @@map("previews")
+}
+
+model Collection {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  previews CollectionPreview[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("collections")
+}
+
+model CollectionPreview {
+  collectionId String   @map("collection_id") @db.Uuid
+  previewId    String   @map("preview_id") @db.Uuid
+  addedAt      DateTime @default(now()) @map("added_at") @db.Timestamptz
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  preview    Preview    @relation(fields: [previewId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, previewId])
+  @@index([previewId])
+  @@map("collection_previews")
+}
+
+model Tag {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  name      String   @db.VarChar(50)
+  color     String   @default("#6366f1") @db.VarChar(7)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  previews PreviewTag[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("tags")
+}
+
+model PreviewTag {
+  previewId String   @map("preview_id") @db.Uuid
+  tagId     String   @map("tag_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  preview Preview @relation(fields: [previewId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([previewId, tagId])
+  @@index([tagId])
+  @@map("preview_tags")
+}
+
+model ApiUsage {
+  id           String   @id @default(uuid()) @db.Uuid
+  apiKeyId     String   @map("api_key_id") @db.Uuid
+  endpoint     String   @db.VarChar(255)
+  method       String   @db.VarChar(10)
+  statusCode   Int      @map("status_code")
+  responseTime Int      @map("response_time")
+  url          String?  @db.VarChar(2048)
+  cached       Boolean  @default(false)
+  engine       String?  @db.VarChar(20)
+  ipAddress    String?  @map("ip_address") @db.VarChar(45)
+  userAgent    String?  @map("user_agent") @db.VarChar(1024)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([endpoint, createdAt(sort: Desc)])
+  @@map("api_usage")
+}
+
+model Screenshot {
+  id             String           @id @default(uuid()) @db.Uuid
+  previewId      String?          @map("preview_id") @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  url            String           @db.VarChar(2048)
+  urlHash        String           @map("url_hash") @db.VarChar(64)
+  storagePath    String           @map("storage_path") @db.VarChar(512)
+  publicUrl      String           @map("public_url") @db.VarChar(1024)
+  viewportWidth  Int              @default(1280) @map("viewport_width")
+  viewportHeight Int              @default(720) @map("viewport_height")
+  fileSize       Int?             @map("file_size")
+  format         ScreenshotFormat @default(png)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt      DateTime?        @map("expires_at") @db.Timestamptz
+
+  preview Preview? @relation(fields: [previewId], references: [id], onDelete: SetNull)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([urlHash, viewportWidth, viewportHeight])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([expiresAt])
+  @@map("screenshots")
+}
